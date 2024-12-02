@@ -1,12 +1,14 @@
+const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
 const sgMail = require('@sendgrid/mail');
 
-// Initialize SendGrid
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
-const sendVerificationEmail = async (userDetails) => {
+const secretsManager = new SecretsManagerClient();
+
+
+const sendVerificationEmail = async (userDetails, secrets) => {
     const msg = {
         to: userDetails.email,
-        from: process.env.FROM_EMAIL,
+        from: secrets.from_email,
         subject: 'Verify Your Email Address',
         text: `Dear ${userDetails.firstName},\n\nPlease verify your email address by clicking the following link: ${userDetails.verificationUrl}\n\nThis link will expire in 2 minutes.\n\nBest regards,\nYour Application Team`,
         html: `
@@ -30,10 +32,25 @@ const sendVerificationEmail = async (userDetails) => {
 exports.handler = async (event) => {
     try {
         console.log('Event received:', event);
-        const message = JSON.parse(event.Records[0].Sns.Message);
+
+        // Get SendGrid credentials from Secrets Manager
+        const command = new GetSecretValueCommand({
+            SecretId: process.env.SECRETS_ARN
+        });
         
-        // Send verification email
-        await sendVerificationEmail(message);
+        const response = await secretsManager.send(command);
+        const secrets = JSON.parse(response.SecretString);
+        
+        console.log('Secrets retrieved successfully');
+        
+        // Initialize SendGrid with API key from secrets
+        sgMail.setApiKey(secrets.api_key);
+
+        const message = JSON.parse(event.Records[0].Sns.Message);
+        console.log('SNS message parsed:', message);
+        
+        // Send verification email using secrets
+        await sendVerificationEmail(message, secrets);
 
         return {
             statusCode: 200,
